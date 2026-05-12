@@ -1,0 +1,26 @@
+plugins {
+    id 'org.jetbrains.kotlin.jvm' version '2.2.10'
+    id 'java-gradle-plugin'
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    // Gradle API（用于开发插件）
+    implementation gradleApi()
+
+    // Android Gradle Plugin API（用于读取 Android 配置）
+    implementation 'com.android.tools.build:gradle:9.1.0'
+}
+
+gradlePlugin {
+    plugins {
+        fyGuard {
+            id = 'com.fy.guard'
+            implementationClass = 'com.fy.guard.buildsrc.ZyGuardPlugin'
+        }
+    }
+}

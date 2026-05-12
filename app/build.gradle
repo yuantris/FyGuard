@@ -1,0 +1,112 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.plugin.compose'
+    id 'com.fy.guard'   // ← FY Guard 加固插件（只需要这一行）
+}
+
+android {
+    namespace 'com.fy.guard'
+    compileSdk {
+        version = release(36) {
+            minorApiLevel = 1
+        }
+    }
+
+    defaultConfig {
+        applicationId "com.fy.guard"
+        minSdk 24
+        targetSdk 36
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+    buildFeatures {
+        compose true
+    }
+}
+
+dependencies {
+    implementation project(":guard-stub")
+    implementation libs.androidx.core.ktx
+    implementation libs.androidx.lifecycle.runtime.ktx
+    implementation libs.androidx.activity.compose
+    implementation platform(libs.androidx.compose.bom)
+    implementation libs.androidx.compose.ui
+    implementation libs.androidx.compose.ui.graphics
+    implementation libs.androidx.compose.ui.tooling.preview
+    implementation libs.androidx.compose.material3
+    testImplementation libs.junit
+    androidTestImplementation libs.androidx.junit
+    androidTestImplementation libs.androidx.espresso.core
+    androidTestImplementation platform(libs.androidx.compose.bom)
+    androidTestImplementation libs.androidx.compose.ui.test.junit4
+    debugImplementation libs.androidx.compose.ui.tooling
+    debugImplementation libs.androidx.compose.ui.test.manifest
+}
+
+// ============================================================
+// FY Guard 加固配置
+//
+// 这个配置块由 com.fy.guard 插件提供。
+// 所有选项都有默认值，最少只需要设置 masterKey。
+// ============================================================
+guard {
+    // 总开关（默认 true）
+    enabled = true
+
+    // AES-256 主密钥（64 位十六进制 = 32 字节）
+    // 生产环境从 gradle.properties 或 CI 环境变量读取
+    masterKey = findProperty('FY_MASTER_KEY') ?: ''
+
+    // DEX 保护
+    dexProtection {
+        enabled = true       // DEX 整体加密（第一代，推荐开启）
+        methodLevel = false  // 函数抽取（第二代，可选，影响启动速度）
+        // vmpProtection = true  // VMP 虚拟化（第三代，可选）
+        // vmpTargetMethods = [//     "com.example.myapp.CriticalClass.importantMethod"
+        //]
+    }
+
+    // SO 保护（需要有 native 库才开启）
+    soProtection {
+        enabled = false      // 默认关闭（示例 App 没有 native 库）
+        // multiLayer = true
+        // libraries = ['libnative-lib.so']
+    }
+
+    // 资源加密
+    resourceProtection {
+        enabled = true       // 加密 assets 中的 JSON/XML/KEY 等敏感文件
+        patterns = ['*.json', '*.xml', '*.key', '*.dat']
+    }
+
+    // 安全检测
+    antiDebug = true         // 反调试（ptrace / TracerPid / maps 扫描等）
+    antiFrida = true         // 反 Frida（端口扫描 / 内存特征 / 线程检测等）
+    integrityCheck = true    // APK 签名完整性校验（防重打包）
+
+    // APK 签名
+    signing {
+        storeFile = file("${rootProject.projectDir}/sign/release.keystore")
+        storePassword = "fyguard123"
+        keyAlias = "fyguard"
+        keyPassword = "fyguard123"
+    }
+}
