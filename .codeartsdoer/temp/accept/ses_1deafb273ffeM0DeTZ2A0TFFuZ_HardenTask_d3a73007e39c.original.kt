@@ -51,18 +51,31 @@ abstract class HardenTask : DefaultTask() {
         val extractedDir = File(workDir, "extracted")
         extractApk(inputApk, extractedDir)
 
-        // Step 2: 检查 manifest 中的 real_app_class
-        // Gradle hook 已在 processManifest 阶段插入 meta-data，无需再次修改
-        logger.lifecycle("[2/8] Checking manifest...")
-        val manifestProcessor = ManifestProcessor(project, logger)
-        val manifestInfo = manifestProcessor.readFromApk(inputApk)
-        var realAppClass = manifestInfo?.realAppClass ?: ""
+        // Step 2: 直接修改二进制 AXML StringPool，替换 Application 类名
+        // 不依赖前置 hook，Gradle 增量构建可能跳过 processManifest
+        logger.lifecycle("[2/8] Patching manifest (binary AXML)...")
+        var realAppClass = ""
 
-        if (manifestInfo != null) {
-            logger.lifecycle("    package: ${manifestInfo.packageName}")
-            logger.lifecycle("    application: ${realAppClass.ifEmpty { "(default)" }}")
-            if (manifestInfo.hasCustomApplication) {
-                logger.lifecycle("    real_app_class from meta-data: $realAppClass")
+        val manifestFile = File(extractedDir, "AndroidManifest.xml")
+        val axmlPatcher = AxmlPatcher(logger)
+        val patchResult = axmlPatcher.patchApplicationName(
+            manifestFile,
+            ManifestProcessor.STUB_APPLICATION
+        )
+
+        if (patchResult.success) {
+            realAppClass = patchResult.originalAppClass
+            logger.lifecycle("    original app class: $realAppClass")
+            logger.lifecycle("    patched to: ${ManifestProcessor.STUB_APPLICATION}")
+        } else {
+            logger.warn("    AxmlPatcher: ${patchResult.message}")
+            logger.warn("    fallback: trying aapt2 dump...")
+            val manifestProcessor = ManifestProcessor(project, logger)
+            val manifestInfo = manifestProcessor.readFromApk(inputApk)
+            if (manifestInfo != null) {
+                realAppClass = manifestInfo.realAppClass
+                logger.lifecycle("    package: ${manifestInfo.packageName}")
+                logger.lifecycle("    application: ${realAppClass.ifEmpty { "(default)" }}")
             }
         }
 
@@ -142,19 +155,10 @@ abstract class HardenTask : DefaultTask() {
         }
         if (dexFiles.isEmpty()) error("No DEX found")
 
-        fun writeIntLE(out: java.io.ByteArrayOutputStream, v: Int) {
-            out.write(v and 0xFF)
-            out.write((v shr 8) and 0xFF)
-            out.write((v shr 16) and 0xFF)
-            out.write((v shr 24) and 0xFF)
-        }
-
         val combined = java.io.ByteArrayOutputStream()
-        writeIntLE(combined, dexFiles.size)
-        for ((_, d) in dexFiles) {
-            writeIntLE(combined, d.size)
-            combined.write(d)
-        }
+        val dos = java.io.DataOutputStream(combined)
+        dos.writeInt(dexFiles.size)
+        for ((_, d) in dexFiles) { dos.writeInt(d.size); dos.write(d) }
         val plainDex = combined.toByteArray()
 
         var finalDex = plainDex
@@ -218,12 +222,10 @@ abstract class HardenTask : DefaultTask() {
         val androidHome = findAndroidSdk()
             ?: error("ANDROID_HOME not set. Please set ANDROID_HOME or add sdk.dir to local.properties")
         val buildToolsDir = File(androidHome, "build-tools")
-        val isWindows = System.getProperty("os.name").lowercase().contains("windows")
-        val exeName = if (isWindows) "zipalign.exe" else "zipalign"
         val zipalign = buildToolsDir.listFiles()
             ?.filter { it.isDirectory }
             ?.sortedByDescending { it.name }
-            ?.firstNotNullOfOrNull { File(it, exeName) }
+            ?.firstNotNullOfOrNull { File(it, "zipalign.exe") }
             ?: error("zipalign not found in $buildToolsDir")
 
         val proc = ProcessBuilder(zipalign.absolutePath, "-f", "4", input.absolutePath, output.absolutePath)

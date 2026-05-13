@@ -299,14 +299,13 @@ int fy_init_dex(JNIEnv *env, jobject context) {
         if (!path_cl) {
             __android_log_print(ANDROID_LOG_WARN, TAG, "context.getClassLoader() returned null");
         } else {
-            /* Use Class.getDeclaredField to access private "parent" field */
+            /* Use java.lang.ClassLoader.class to access the private "parent" field */
             jclass cl_loader_cls = (*env)->FindClass(env, "java/lang/ClassLoader");
-            jclass class_cls = (*env)->FindClass(env, "java/lang/Class");
-            jmethodID get_df = (*env)->GetMethodID(env, class_cls, "getDeclaredField",
+            jmethodID get_df = (*env)->GetStaticMethodID(env, cl_loader_cls, "getDeclaredField",
                                                          "(Ljava/lang/String;)Ljava/lang/reflect/Field;");
 
             jstring js_parent = (*env)->NewStringUTF(env, "parent");
-            jobject parent_field = (*env)->CallObjectMethod(env, cl_loader_cls, get_df, js_parent);
+            jobject parent_field = (*env)->CallStaticObjectMethod(env, cl_loader_cls, get_df, js_parent);
             (*env)->DeleteLocalRef(env, js_parent);
 
             if (!parent_field) {

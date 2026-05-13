@@ -74,10 +74,10 @@ static void derive_all_keys(uint8_t out_dex_key[32],
     fy_hex_to_bytes(FY_MASTER_KEY_HEX, master, 32);
 
     /* DEX 密钥 = SHA-256(master || "DEX_GUARD") */
-    uint8_t dex_input[32 + 9];
+    uint8_t dex_input[32 + 10];
     memcpy(dex_input, master, 32);
-    memcpy(dex_input + 32, "DEX_GUARD", 9);
-    fy_sha256(dex_input, 41, out_dex_key);
+    memcpy(dex_input + 32, "DEX_GUARD", 10);
+    fy_sha256(dex_input, 42, out_dex_key);
 
     /* Method 密钥 = SHA-256(master || "METHOD_PX") */
     uint8_t meth_input[32 + 10];
@@ -86,10 +86,10 @@ static void derive_all_keys(uint8_t out_dex_key[32],
     fy_sha256(meth_input, 42, out_meth_key);
 
     /* Resource 密钥 = SHA-256(master || "RES_GUARD") */
-    uint8_t res_input[32 + 9];
+    uint8_t res_input[32 + 10];
     memcpy(res_input, master, 32);
-    memcpy(res_input + 32, "RES_GUARD", 9);
-    fy_sha256(res_input, 41, out_res_key);
+    memcpy(res_input + 32, "RES_GUARD", 10);
+    fy_sha256(res_input, 42, out_res_key);
 
     /* 安全擦除主密钥（不在内存中多留） */
     fy_secure_zero(master, 32);

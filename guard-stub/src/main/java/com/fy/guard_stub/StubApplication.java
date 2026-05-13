@@ -77,117 +77,84 @@ public class StubApplication extends Application {
 
     @Override
     protected void attachBaseContext(Context base) {
-        super.attachBaseContext(base);
-
-        Log.i(TAG, "attachBaseContext: starting hardening init...");
+        Log.i(TAG, "attachBaseContext: starting early init BEFORE super...");
 
         try {
             // ==========================================================
+            // ⚠️ 关键修复：在 super.attachBaseContext() 之前完成所有初始化！
+            //
+            // Android 系统在 super.attachBaseContext() 执行过程中
+            // 就会初始化 ContentProvider（包括 androidx.startup.InitializationProvider）。
+            // 如果此时 ClassLoader 还没替换，ContentProvider 就找不到自己的类。
+            //
+            // 所以必须在 super 之前完成：
+            //   1. 加载 native 库
+            //   2. 解密 DEX
+            //   3. 创建自定义 ClassLoader
+            //   4. 替换 LoadedApk.mClassLoader
+            // ==========================================================
+
             // Step 1: 加载 Native 库
-            //
-            // System.loadLibrary("fyencrypt") 触发：
-            //   - JNI_OnLoad: 密钥派生、反调试启动、JNI 注册
-            //   - __attribute__((constructor)): SO 代码段解密（如果有）
-            //
-            // 注意：NativeLoader 的 static 块已经调用了 loadLibrary，
-            // 但显式调用确保时序正确（在任何 JNI 调用之前）。
-            // ==========================================================
-            Log.i(TAG, "  [1/7] loading native library...");
+            Log.i(TAG, "  [1/6] loading native library...");
             System.loadLibrary("fyencrypt");
-            Log.i(TAG, "  [1/7] native library loaded");
+            Log.i(TAG, "  [1/6] native library loaded");
 
-            // ==========================================================
-            // Step 2: Native 安全初始化
-            //
-            // nativeInit 完成：
-            //   - APK 签名证书校验（防重打包）
-            //   - DEX 解密（AES-256-CBC）+ 完整性校验（SHA-256）
-            //   - 创建 InMemoryDexClassLoader
-            //   - 设置 NativeLoader.sClassLoader
-            //   - 方法体还原引擎初始化
-            //   - 最终反调试/反 Frida 检查
-            // ==========================================================
-            Log.i(TAG, "  [2/7] native security init...");
+            // Step 2: Native 安全初始化（解密 DEX，创建 ClassLoader）
+            Log.i(TAG, "  [2/6] native security init (DEX decryption)...");
             NativeLoader.nativeInit(base);
-            Log.i(TAG, "  [2/7] native init complete");
+            Log.i(TAG, "  [2/6] native init complete");
 
-            // ==========================================================
-            // Step 3: 从 meta-data 读取真实 Application 类名
-            // ==========================================================
-            Log.i(TAG, "  [3/7] reading real application class...");
-            String realClassName = getRealApplicationClass(base);
-
-            if (realClassName == null || realClassName.isEmpty()) {
-                Log.w(TAG, "  [3/7] no real application class configured");
-                Log.w(TAG, "  [3/7] app will run with StubApplication only");
-                return;
-            }
-            Log.i(TAG, "  [3/7] real application: " + realClassName);
-
-            // ==========================================================
-            // Step 4: 获取 native 层创建的自定义 ClassLoader
-            //
-            // NativeLoader.sClassLoader 由 native 层的 dex_guard.c 设置。
-            // 它是一个 InMemoryDexClassLoader（或 DexClassLoader），
-            // 能够加载解密后的 DEX 中的类。
-            // ==========================================================
-            Log.i(TAG, "  [4/7] getting custom ClassLoader...");
+            // Step 3: 获取自定义 ClassLoader
+            Log.i(TAG, "  [3/6] getting custom ClassLoader...");
             ClassLoader customClassLoader = NativeLoader.sClassLoader;
 
             if (customClassLoader == null) {
-                Log.e(TAG, "  [4/7] FATAL: sClassLoader is null!");
-                Log.e(TAG, "  [4/7] DEX decryption may have failed");
+                Log.e(TAG, "  [3/6] FATAL: sClassLoader is null!");
+            } else {
+                Log.i(TAG, "  [3/6] ClassLoader: " + customClassLoader.getClass().getName());
+            }
+
+            // Step 4: ⚠️ 关键：在 super 之前替换 ClassLoader！
+            // 此时 ContentProvider 即将被初始化，必须让它们能加载到解密后的类
+            if (customClassLoader != null) {
+                Log.i(TAG, "  [4/6] replacing ClassLoader BEFORE super...");
+                replaceClassLoader(base, customClassLoader);
+                Log.i(TAG, "  [4/6] ClassLoader replaced BEFORE super");
+            }
+
+            // Step 5: 继续执行正常的 attachBaseContext
+            // 此时 ContentProvider 初始化时就能找到 androidx.startup.InitializationProvider 了
+            Log.i(TAG, "  [5/6] calling super.attachBaseContext()...");
+            super.attachBaseContext(base);
+            Log.i(TAG, "  [5/6] super.attachBaseContext() complete");
+
+            // ==========================================================
+            // super 之后的初始化（可以在 onCreate 中做的，这里也可以继续）
+            // ==========================================================
+
+            // Step 6: 从 meta-data 读取真实 Application 类名
+            Log.i(TAG, "  [6/6] reading real application class...");
+            String realClassName = getRealApplicationClass(base);
+
+            if (realClassName == null || realClassName.isEmpty()) {
+                Log.w(TAG, "  [6/6] no real application class configured");
+                Log.w(TAG, "  [6/6] app will run with StubApplication only");
+                initialized = true;
                 return;
             }
-            Log.i(TAG, "  [4/7] ClassLoader: " + customClassLoader.getClass().getName());
+            Log.i(TAG, "  [6/6] real application: " + realClassName);
 
-            // ==========================================================
-            // Step 5: 替换 LoadedApk 中的 ClassLoader
-            //
-            // 为什么要替换？
-            //   Android 框架在加载组件（Activity, Service,
-            //   ContentProvider, BroadcastReceiver）时，
-            //   使用 LoadedApk.mClassLoader 来查找类。
-            //   如果不替换，这些组件的类将从原始的 stub DEX 中查找，
-            //   找不到真实实现（stub DEX 只有壳代码）。
-            //
-            // 替换策略：
-            //   创建 DelegateClassLoader，优先从解密 DEX 查找，
-            //   找不到时回退到原始 ClassLoader（stub DEX）。
-            // ==========================================================
-            Log.i(TAG, "  [5/7] replacing ClassLoader...");
-            replaceClassLoader(base, customClassLoader);
-            Log.i(TAG, "  [5/7] ClassLoader replaced");
-
-            // ==========================================================
-            // Step 6: 加载并实例化真实 Application
-            //
-            // 从解密的 DEX 中加载用户的真实 Application 类，
-            // 然后通过反射注入 Context（mBase 和 mLoadedApk）。
-            // ==========================================================
-            Log.i(TAG, "  [6/7] loading real application...");
+            // Step 7: 加载并实例化真实 Application
+            Log.i(TAG, "  [7/7] loading real application...");
             Class<?> realClass = customClassLoader.loadClass(realClassName);
             realApp = (Application) realClass.newInstance();
 
-            // 注入 Context（mBase）
+            // 注入 Context
             injectBaseContext(realApp, base);
-
-            // 注入 LoadedApk（mLoadedApk）
             injectLoadedApk(realApp, base);
 
-            Log.i(TAG, "  [6/7] real application instantiated");
-
-            // ==========================================================
-            // Step 7: 替换 ActivityThread.mInitialApplication
-            //
-            // Android 系统通过 ActivityThread.mInitialApplication
-            // 引用当前 Application。如果 stub 壳不是"真正的" Application，
-            // 某些系统行为可能不正确。
-            // 替换为真实 Application 确保系统回调正确路由。
-            // ==========================================================
-            Log.i(TAG, "  [7/7] replacing initial application...");
+            // 替换 ActivityThread.mInitialApplication
             replaceInitialApplication(realApp);
-            Log.i(TAG, "  [7/7] initial application replaced");
 
             initialized = true;
             Log.i(TAG, "========================================");
@@ -196,8 +163,8 @@ public class StubApplication extends Application {
 
         } catch (Exception e) {
             Log.e(TAG, "Hardening FAILED", e);
-            // 初始化失败时不崩溃，让 App 以 stub 模式运行
-            // （用户会看到空白页面，但不会闪退）
+            // 初始化失败时，仍调用 super 让 App 以 stub 模式运行
+            super.attachBaseContext(base);
         }
     }
 
