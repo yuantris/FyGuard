@@ -58,7 +58,21 @@ public class MainActivity extends Activity {
         // 安全状态
         TextView security = new TextView(this);
         try {
-            int checkResult = com.fy.guard_stub.NativeLoader.nativeSecurityCheck(this);
+            android.util.Log.i("MyApp", "securityCheck: trying to get NativeLoader...");
+            // 从 stub ClassLoader 获取 NativeLoader（sStubClassLoader 是 public 的）
+            Class<?> nlClass = Class.forName("com.fy.guard_stub.NativeLoader");
+            android.util.Log.i("MyApp", "securityCheck: NativeLoader class = " + nlClass + ", CL = " + nlClass.getClassLoader());
+            
+            ClassLoader stubCL = (ClassLoader) nlClass.getField("sStubClassLoader").get(null);
+            android.util.Log.i("MyApp", "securityCheck: stubCL = " + stubCL);
+            
+            Class<?> nativeLoaderClass = Class.forName("com.fy.guard_stub.NativeLoader", false, stubCL);
+            android.util.Log.i("MyApp", "securityCheck: nativeLoaderClass = " + nativeLoaderClass + ", CL = " + nativeLoaderClass.getClassLoader());
+            
+            java.lang.reflect.Method method = nativeLoaderClass.getMethod("securityCheck", android.content.Context.class);
+            int checkResult = (int) method.invoke(null, this);
+            android.util.Log.i("MyApp", "securityCheck: result = " + checkResult);
+            
             String statusText;
             switch (checkResult) {
                 case 0: statusText = "SECURE — no threats detected"; break;
@@ -69,6 +83,7 @@ public class MainActivity extends Activity {
             }
             security.setText("Security status: " + statusText);
         } catch (Exception e) {
+            android.util.Log.e("MyApp", "securityCheck failed", e);
             security.setText("Security check: " + e.getMessage());
         }
         security.setTextSize(14);
@@ -83,9 +98,20 @@ public class MainActivity extends Activity {
         // 页面大小信息
         TextView pageInfo = new TextView(this);
         try {
-            String info = com.fy.guard_stub.NativeLoader.nativeGetPageInfo();
+            android.util.Log.i("MyApp", "getPageInfo: trying to get NativeLoader...");
+            ClassLoader stubCL = (ClassLoader) Class.forName("com.fy.guard_stub.NativeLoader")
+                    .getField("sStubClassLoader").get(null);
+            android.util.Log.i("MyApp", "getPageInfo: stubCL = " + stubCL);
+            
+            Class<?> nativeLoaderClass = Class.forName("com.fy.guard_stub.NativeLoader", false, stubCL);
+            android.util.Log.i("MyApp", "getPageInfo: nativeLoaderClass = " + nativeLoaderClass + ", CL = " + nativeLoaderClass.getClassLoader());
+            
+            java.lang.reflect.Method method = nativeLoaderClass.getMethod("getPageInfo");
+            String info = (String) method.invoke(null);
+            android.util.Log.i("MyApp", "getPageInfo: result = " + info);
             pageInfo.setText("Native info: " + info);
         } catch (Exception e) {
+            android.util.Log.e("MyApp", "getPageInfo failed", e);
             pageInfo.setText("Native info: unavailable");
         }
         pageInfo.setTextSize(12);

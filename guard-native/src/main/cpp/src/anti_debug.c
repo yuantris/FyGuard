@@ -277,7 +277,7 @@ static int detect_debug_ports(void) {
  * 综合检测入口
  * ============================================================ */
 int fy_anti_debug_check(void) {
-    if (detect_ptrace())      return 1;
+    //if (detect_ptrace())      return 1;  // 在某些设备上误报
     if (detect_tracer_pid())  return 1;
     if (detect_debug_libs())  return 1;
     if (detect_timing())      return 1;

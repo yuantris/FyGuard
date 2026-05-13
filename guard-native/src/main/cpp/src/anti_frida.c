@@ -297,7 +297,7 @@ int fy_anti_frida_check(JNIEnv *env) {
     if (scan_maps_for_frida())   return 1;
     if (scan_frida_ports())      return 1;
     if (scan_frida_pipes())      return 1;
-    if (scan_memory_pattern())   return 1;
+    //if (scan_memory_pattern())   return 1;  // 可能触发SIGBUS
     if (detect_abnormal_process()) return 1;
     if (detect_frida_threads())  return 1;
     if (env && detect_xposed_classes(env)) return 1;

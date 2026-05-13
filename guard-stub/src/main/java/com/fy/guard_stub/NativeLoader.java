@@ -37,18 +37,28 @@ public class NativeLoader {
     public static volatile ClassLoader sClassLoader;
 
     /**
-     * 加载 native 库
-     *
-     * 这个 static 块在类首次被引用时执行。
-     * StubApplication.attachBaseContext 中调用 NativeLoader 的任何方法
-     * 都会触发此处的 loadLibrary。
-     *
-     * 加载 libfyencrypt.so 会触发：
-     *   1. __attribute__((constructor)) 函数（SO 代码段解密）
-     *   2. JNI_OnLoad（密钥派生、反调试初始化、JNI 注册）
+     * stub ClassLoader（NativeLoader 自身所在的 ClassLoader）
+     * 用于从解密后的代码访问 stub 中的 NativeLoader 类
      */
-    static {
+    public static volatile ClassLoader sStubClassLoader;
+
+    /**
+     * 标记 native 库是否已加载
+     */
+    private static volatile boolean sNativeLoaded = false;
+
+    /**
+     * 加载 native 库（手动调用）
+     *
+     * 在 StubApplication.attachBaseContext 中首次调用。
+     * 后续再调用时直接返回，避免重复加载。
+     */
+    public static synchronized void loadNativeLibrary() {
+        if (sNativeLoaded) return;
+        // 保存 stub ClassLoader（此时还是 PathClassLoader）
+        sStubClassLoader = NativeLoader.class.getClassLoader();
         System.loadLibrary("fyencrypt");
+        sNativeLoaded = true;
     }
 
     /**
@@ -87,4 +97,18 @@ public class NativeLoader {
      *         3 - APK 签名校验失败（可能被重打包）
      */
     public static native int nativeSecurityCheck(Context context);
+
+    /**
+     * 获取页面大小信息（包装方法，供解密后代码调用）
+     */
+    public static String getPageInfo() {
+        return nativeGetPageInfo();
+    }
+
+    /**
+     * 安全检查（包装方法，供解密后代码调用）
+     */
+    public static int securityCheck(Context context) {
+        return nativeSecurityCheck(context);
+    }
 }

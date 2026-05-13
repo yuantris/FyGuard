@@ -96,7 +96,7 @@ public class StubApplication extends Application {
 
             // Step 1: 加载 Native 库
             Log.i(TAG, "  [1/6] loading native library...");
-            System.loadLibrary("fyencrypt");
+            NativeLoader.loadNativeLibrary();
             Log.i(TAG, "  [1/6] native library loaded");
 
             // Step 2: Native 安全初始化（解密 DEX，创建 ClassLoader）
@@ -112,6 +112,16 @@ public class StubApplication extends Application {
                 Log.e(TAG, "  [3/6] FATAL: sClassLoader is null!");
             } else {
                 Log.i(TAG, "  [3/6] ClassLoader: " + customClassLoader.getClass().getName());
+                
+                // 设置解密后 DEX 中 NativeLoader 的 sStubClassLoader
+                try {
+                    Class<?> nlInDex = Class.forName("com.fy.guard_stub.NativeLoader", false, customClassLoader);
+                    java.lang.reflect.Field stubCLField = nlInDex.getField("sStubClassLoader");
+                    stubCLField.set(null, NativeLoader.sStubClassLoader);
+                    Log.i(TAG, "  [3/6] sStubClassLoader set in decrypted DEX: " + NativeLoader.sStubClassLoader);
+                } catch (Exception e) {
+                    Log.w(TAG, "  [3/6] failed to set sStubClassLoader: " + e.getMessage());
+                }
             }
 
             // Step 4: ⚠️ 关键：在 super 之前替换 ClassLoader！
@@ -293,7 +303,6 @@ public class StubApplication extends Application {
     private void injectBaseContext(Application app, Context base) throws Exception {
         // ContextWrapper.mBase (Context 类型)
         Field mBaseField = Application.class.getSuperclass()   // Application → ContextWrapper
-                .getSuperclass()                                    // ContextWrapper → ContextWrapper 的父类
                 .getDeclaredField("mBase");
         mBaseField.setAccessible(true);
         mBaseField.set(app, base);
