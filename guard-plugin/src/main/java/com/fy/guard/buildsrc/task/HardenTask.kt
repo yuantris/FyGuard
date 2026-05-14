@@ -118,9 +118,12 @@ abstract class HardenTask : DefaultTask() {
 
     private fun injectStubAndNative(dir: File) {
         File(dir, "lib/arm64-v8a").mkdirs()
+        File(dir, "lib/x86_64").mkdirs()
         extractRes("/stub/classes.dex", File(dir, "classes.dex"))
         extractRes("/native/arm64-v8a/libfyencrypt.so",
             File(dir, "lib/arm64-v8a/libfyencrypt.so"))
+        extractRes("/native/x86_64/libfyencrypt.so",
+            File(dir, "lib/x86_64/libfyencrypt.so"))
     }
 
     private fun extractRes(path: String, target: File) {
